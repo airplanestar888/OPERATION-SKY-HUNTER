@@ -100,11 +100,16 @@ export const AIRCRAFT = [
     spinDir: (name) => (/FL|RR/i.test(name) ? 1 : -1),
     gimbalNode: null,
     strobeMaterial: null,
-    // Eye over the body: 1.0 m behind centre, 1.35 m up — 0.88 m above
-    // the rotor plane (+0.47 m), so the front rotors (1.36 m ahead,
-    // 2.30 m out) fall inside the FPV frame at both edges while the
-    // rear rotors stay out of view.
-    fpvEye: { forward: -1.0, up: 1.35 },
+    // Eye over the body: 0.4 m behind centre, 1.35 m up — 0.88 m above
+    // the rotor plane (+0.47 m). At 1.0 m behind, the whole front disc
+    // fell inside the frame and the blades read face-on, like flying
+    // backward. Here the front hub sits ~53° off-axis, right at the
+    // ~53.7° horizontal half-FOV (75° vertical), so only the inner
+    // half of each front disc shows at the frame edge — a forward read
+    // — while the rear rotors stay out of view. (First try at -0.3 put
+    // the hub just outside the frame and the props read too faint in
+    // one of two test shots; -0.4 brings the inner half clearly in.)
+    fpvEye: { forward: -0.4, up: 1.35 },
   },
   {
     id: 'skyhunter',
