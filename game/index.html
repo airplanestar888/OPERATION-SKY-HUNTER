@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operation: Sky Hunter — Military Drone Flight</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<canvas id="game" aria-label="Operation Sky Hunter: fly the recon drone through the rings and land on the runway"></canvas>
+<div id="vignette" aria-hidden="true"></div>
+<p id="status" role="status" aria-live="polite"></p>
+
+<!-- ============ FLIGHT HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="hud-top-left">
+    <div id="hud-mission">OPERATION: SKY HUNTER</div>
+    <div id="hud-objective"></div>
+    <div id="hud-status"></div>
+  </div>
+  <div id="hud-top-center">
+    <canvas id="hud-compass" width="400" height="44"></canvas>
+  </div>
+  <div id="hud-top-right">
+    <div id="hud-timer">T-00:00</div>
+    <div id="hud-score">SCORE 000000</div>
+  </div>
+  <div id="hud-bl">
+    <div class="hud-read" id="hud-alt">ALT 0000 m</div>
+    <div class="hud-read" id="hud-spd">SPD 000 km/h</div>
+    <div class="hud-read" id="hud-vs">V/S +0.0 m/s</div>
+    <div class="hud-read" id="hud-thr">THR 000%</div>
+    <div class="hud-bar-row"><span id="hud-fuel">FUEL 100%</span><span class="hud-bar"><span id="hud-fuel-bar"></span></span></div>
+    <div class="hud-bar-row"><span id="hud-hull">HULL 100%</span><span class="hud-bar"><span id="hud-hull-bar"></span></span></div>
+  </div>
+  <div id="hud-br">
+    <canvas id="hud-radar" width="150" height="150"></canvas>
+    <div id="hud-target-name">NEXT: RING 1</div>
+    <div id="hud-target-dist"></div>
+  </div>
+  <div id="hud-reticle">⊕</div>
+  <div id="hud-warn"></div>
+  <div id="hud-ring-arrow">◎</div>
+  <div id="hud-ring-dist"></div>
+  <div id="hud-toast"></div>
+</div>
+
+<!-- ============ MAIN MENU ============ -->
+<div id="menu-main" class="menu">
+  <div class="menu-panel">
+    <div class="menu-kicker">RECONNAISSANCE WING // 7TH DRONE SQUADRON</div>
+    <h1>OPERATION<br><span>SKY HUNTER</span></h1>
+    <p class="menu-sub">Military drone flight — five sorties, one runway, no second chances.</p>
+    <button id="btn-start" class="btn primary">▶&nbsp; START MISSION</button>
+    <button id="btn-missions" class="btn">MISSION SELECT</button>
+    <div class="diff-row">
+      <span class="diff-label">DIFFICULTY</span>
+      <button class="btn diff-btn" data-diff="easy">EASY</button>
+      <button class="btn diff-btn selected" data-diff="normal">NORMAL</button>
+      <button class="btn diff-btn" data-diff="hard">HARD</button>
+    </div>
+    <div class="diff-row aircraft-row" id="aircraft-row">
+      <span class="diff-label">AIRCRAFT</span>
+    </div>
+    <div class="menu-foot">V switches aircraft in flight · your choice is saved</div>
+    <button id="btn-settings" class="btn">SETTINGS</button>
+    <button id="btn-controls" class="btn">CONTROLS GUIDE</button>
+    <div class="menu-foot">W/S pitch &nbsp;·&nbsp; A/D roll &nbsp;·&nbsp; Q/E yaw &nbsp;·&nbsp; SHIFT boost &nbsp;·&nbsp; SPACE stabilize &nbsp;·&nbsp; C camera &nbsp;·&nbsp; R reset &nbsp;·&nbsp; T time of day &nbsp;·&nbsp; V aircraft</div>
+  </div>
+</div>
+
+<!-- ============ MISSION SELECT ============ -->
+<div id="menu-missions" class="menu hidden">
+  <div class="menu-panel wide">
+    <h2>MISSION SELECT</h2>
+    <div class="mission-list">
+      <button class="btn mission-btn" data-mission="0"><span class="mission-name">01 — FIRST FLIGHT</span><span class="mission-desc">Learn the controls. Fly through 3 rings.</span><span class="mission-best"></span></button>
+      <button class="btn mission-btn" data-mission="1"><span class="mission-name">02 — LOW ALTITUDE</span><span class="mission-desc">Stay low in the river valley. Thread 5 rings under the cliffs.</span><span class="mission-best"></span></button>
+      <button class="btn mission-btn" data-mission="2"><span class="mission-name">03 — THE GAUNTLET</span><span class="mission-desc">Six rings, each narrower than the last.</span><span class="mission-best"></span></button>
+      <button class="btn mission-btn" data-mission="3"><span class="mission-name">04 — HIGH ALTITUDE</span><span class="mission-desc">Climb into the mountain wall. Tag the high checkpoints.</span><span class="mission-best"></span></button>
+      <button class="btn mission-btn" data-mission="4"><span class="mission-name">05 — FINAL APPROACH</span><span class="mission-desc">Fly the corridor, then land on runway 09/27.</span><span class="mission-best"></span></button>
+    </div>
+    <button id="btn-back-missions" class="btn">← BACK</button>
+  </div>
+</div>
+
+<!-- ============ SETTINGS ============ -->
+<div id="menu-settings" class="menu hidden">
+  <div class="menu-panel">
+    <h2>SETTINGS</h2>
+    <label class="set-row">VOLUME <input id="set-volume" type="range" min="0" max="100" value="70"></label>
+    <label class="set-row">QUALITY
+      <select id="set-quality">
+        <option value="high">HIGH — full shadows</option>
+        <option value="medium">MEDIUM — soft shadows</option>
+        <option value="low">LOW — shadows off</option>
+      </select>
+    </label>
+    <label class="set-row">TIME OF DAY
+      <select id="set-time">
+        <option value="clear">CLEAR DAY</option>
+        <option value="golden">GOLDEN HOUR</option>
+        <option value="overcast">OVERCAST</option>
+      </select>
+    </label>
+    <label class="set-row">MUTE AUDIO <input id="set-mute" type="checkbox"></label>
+    <button id="btn-back-settings" class="btn">← BACK</button>
+  </div>
+</div>
+
+<!-- ============ CONTROLS ============ -->
+<div id="menu-controls" class="menu hidden">
+  <div class="menu-panel wide">
+    <h2>CONTROLS GUIDE</h2>
+    <table class="keys">
+      <tr><td>W / S</td><td>Pitch forward / back (climb &amp; dive)</td></tr>
+      <tr><td>A / D</td><td>Roll left / right (bank to turn)</td></tr>
+      <tr><td>Q / E</td><td>Yaw left / right</td></tr>
+      <tr><td>SHIFT</td><td>Increase throttle / boost</td></tr>
+      <tr><td>CTRL</td><td>Reduce throttle</td></tr>
+      <tr><td>SPACE</td><td>Stabilize — level the drone</td></tr>
+      <tr><td>C</td><td>Switch chase / first-person camera</td></tr>
+      <tr><td>R</td><td>Reset to mission start</td></tr>
+      <tr><td>T</td><td>Cycle time of day — clear day / golden hour / overcast</td></tr>
+      <tr><td>V</td><td>Switch aircraft</td></tr>
+      <tr><td>ESC</td><td>Pause</td></tr>
+      <tr><td>MOUSE</td><td>Click the scene to lock the mouse, then steer with it</td></tr>
+    </table>
+    <p class="menu-sub">Fly through the glowing rings in order. Green ring = next target. Land on the runway only when the mission calls for it — touchdown is graded on speed, alignment and descent rate. Watch your fuel: the runway refuels you.</p>
+    <button id="btn-back-controls" class="btn">← BACK</button>
+  </div>
+</div>
+
+<!-- ============ PAUSE ============ -->
+<div id="menu-pause" class="menu hidden">
+  <div class="menu-panel">
+    <h2>PAUSED</h2>
+    <div class="diff-row aircraft-row" id="aircraft-row-pause">
+      <span class="diff-label">AIRCRAFT</span>
+    </div>
+    <button id="btn-resume" class="btn primary">RESUME</button>
+    <button id="btn-restart" class="btn">RESTART MISSION</button>
+    <button id="btn-pause-settings" class="btn">SETTINGS</button>
+    <button id="btn-pause-menu" class="btn">MAIN MENU</button>
+  </div>
+</div>
+
+<!-- ============ MISSION COMPLETE ============ -->
+<div id="menu-complete" class="menu hidden">
+  <div class="menu-panel">
+    <h2 id="complete-title">MISSION COMPLETE</h2>
+    <div class="grade-row">GRADE <span id="complete-grade">A</span></div>
+    <table class="stats">
+      <tr><td>FLIGHT TIME</td><td id="complete-time">0:00</td></tr>
+      <tr><td>MAX SPEED</td><td id="complete-speed">0 km/h</td></tr>
+      <tr><td>RINGS</td><td id="complete-rings">0 / 0</td></tr>
+      <tr><td>LANDING</td><td id="complete-landing">—</td></tr>
+      <tr><td>SCORE</td><td id="complete-score">0</td></tr>
+    </table>
+    <button id="btn-next" class="btn primary">NEXT MISSION ▶</button>
+    <button id="btn-retry-complete" class="btn">FLY IT AGAIN</button>
+    <button id="btn-complete-menu" class="btn">MAIN MENU</button>
+  </div>
+</div>
+
+<!-- ============ MISSION FAILED ============ -->
+<div id="menu-failed" class="menu hidden">
+  <div class="menu-panel">
+    <h2>MISSION FAILED</h2>
+    <p id="failed-reason" class="menu-sub">Drone lost.</p>
+    <button id="btn-retry-failed" class="btn primary">RETRY MISSION</button>
+    <button id="btn-failed-menu" class="btn">MAIN MENU</button>
+  </div>
+</div>
+
+<div id="loading">INITIALIZING RECON SYSTEMS…</div>
+
+<script src="./vendor/three.min.js"></script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
