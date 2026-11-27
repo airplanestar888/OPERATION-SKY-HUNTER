@@ -29,24 +29,27 @@
 //                  camera sits, measured from the aircraft centre along
 //                  the flight direction and above it. The eye sits OVER
 //                  the body (above the fuselage, roughly above the
-//                  centre), looking forward — and in FPV only the
-//                  prop/rotor nodes and their blur discs stay visible,
-//                  the rest of the body is hidden (see setFpvMode), so
-//                  the spinning props read at the frame edges like real
-//                  FPV footage while the fuselage can never block the
-//                  view. The old scheme (eye ahead of the nose, whole
-//                  model hidden) put the camera ahead of the front
-//                  rotors, so the props were behind the camera and
-//                  invisible. Measured from the GLB files (accessor
-//                  min/max, Studio_Floor excluded): the quad nose tip is
-//                  2.98 m ahead of centre (model z +0.635 × 4.7),
-//                  fuselage top +1.15 m, rotor plane +0.47 m, front
-//                  rotors 1.36 m ahead and 2.30 m out to each side; the
-//                  fixed-wing nose tip is 1.77 m ahead (model z +2.85
-//                  × 0.62), fuselage top +0.32 m, pusher prop at the
-//                  tail. Every registry entry must carry fpvEye; main.js
-//                  falls back to a safe generic (3.0 m forward) if one
-//                  is missing.
+//                  centre), looking forward — and in FPV the WHOLE GLB
+//                  body stays visible (see setFpvMode), so the nose
+//                  reads at the bottom of the frame and a bank reads
+//                  through the airframe tilting, like real FPV footage;
+//                  the spinning props read at the frame edges. The eye
+//                  must sit above the fuselage top (quad +1.15 m,
+//                  fixed-wing +0.32 m) so the body can never fill the
+//                  screen, and the nose must stay low enough in frame
+//                  that the ring ahead stays clear. The old scheme hid
+//                  the fuselage in FPV, which left a floating rotor
+//                  blob whenever the aircraft banked (the props with
+//                  nothing attached). Measured from the GLB files
+//                  (accessor min/max, Studio_Floor excluded): the quad
+//                  nose tip is 2.98 m ahead of centre (model z +0.635
+//                  × 4.7), fuselage top +1.15 m, rotor plane +0.47 m,
+//                  front rotors 1.36 m ahead and 2.30 m out to each
+//                  side; the fixed-wing nose tip is 1.77 m ahead
+//                  (model z +2.85 × 0.62), fuselage top +0.32 m,
+//                  pusher prop at the tail. Every registry entry must
+//                  carry fpvEye; main.js falls back to a safe generic
+//                  (3.0 m forward) if one is missing.
 //
 // The outer group is the stable identity for the whole session: main.js
 // positions and rotates it, so the model inside it can be swapped
@@ -128,8 +131,21 @@ export const AIRCRAFT = [
     spinAxis: new THREE.Vector3(0, 0, 1),
     gimbalNode: 'Sensor_Gimbal_Yaw',
     strobeMaterial: 'Mat_Strobe_White',
-    // Nose tip 1.77 m ahead of centre — the eye sits 0.43 m ahead of it.
-    fpvEye: { forward: 2.2, up: 0.45 },
+    // Eye over the fuselage: 0.2 m behind the nose tip (1.77 m ahead of
+    // centre), 0.55 m up — 0.23 m above the fuselage top (+0.32 m). The
+    // nose cone (1.57 m of it ahead of the eye) reads at the bottom of
+    // the frame, its tip ~18° below the view axis (~26% up from the
+    // bottom edge), so a bank reads through the nose tilting while the
+    // ring ahead stays clear. The first try (0.7 m forward, 0.70 m up)
+    // put the tip ~31° below the axis, so only a black sliver of the
+    // nose tip peeked in at the bottom edge — the tip sits at the
+    // fuselage centreline (Y≈0), not at the top (+0.32 m), which is
+    // what the first estimate used. The wings (leading edge 0.07 m aft
+    // of the eye) and the tail pusher prop stay behind the camera plane
+    // and out of view, as before. The old eye (2.2 m forward, 0.45 m
+    // up) sat 0.43 m AHEAD of the nose, so the whole body was behind
+    // the camera and FPV showed nothing of the aircraft at all.
+    fpvEye: { forward: 0.2, up: 0.55 },
   },
 ];
 
@@ -296,26 +312,23 @@ export function createDrone(scene, initialAircraftId) {
     loadAndApply(entry, loadToken);
   }
 
-  // First-person visibility: only the prop/rotor subtrees and their blur
-  // discs stay on screen in FPV; the fuselage, gear, gimbal and lights
-  // are hidden so the body can never block the view, while the spinning
-  // props still read at the frame edges. The loading placeholder is
-  // never hidden. Re-applied whenever the model or the mode changes
-  // (an aircraft switch mid-FPV must not leak a fully visible model).
+  // First-person visibility: the WHOLE GLB body stays on screen in FPV —
+  // the nose reads at the bottom of the frame and a bank reads through
+  // the airframe tilting, with the spinning props attached to it, like
+  // real FPV footage. Hiding the fuselage (the old scheme) left a
+  // floating rotor blob whenever the aircraft banked: the props with
+  // nothing attached. The eye sits above the fuselage top (quad 0.20 m
+  // above it, fixed-wing 0.38 m), so the body can never fill the screen
+  // or block the ring ahead. The loading placeholder is never hidden.
+  // Re-applied whenever the model or the mode changes (an aircraft
+  // switch mid-FPV must not leak a stale visibility state).
   function applyFpvVisibility() {
     const model = state.model;
     if (!model || model === placeholder) return;
     if (state.fpvAppliedTo === model && state.fpvAppliedFor === state.fpvMode) return;
     model.traverse((o) => {
       if (!o.isMesh) return;
-      if (!state.fpvMode) { o.visible = true; return; }
-      let keep = !!o.userData.isPropDisc;
-      let p = o.parent;
-      while (p && !keep) {
-        if (p.userData && p.userData.isPropRoot) keep = true;
-        p = p.parent;
-      }
-      o.visible = keep;
+      o.visible = true;
     });
     state.fpvAppliedTo = model;
     state.fpvAppliedFor = state.fpvMode;

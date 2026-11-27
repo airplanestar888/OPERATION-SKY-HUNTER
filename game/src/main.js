@@ -85,6 +85,105 @@ function showToast(text, ms = 2200) {
 }
 
 // ---------------------------------------------------------------------------
+// Asset loading gate — the player must not enter a mission until both GLB
+// aircraft are fully downloaded AND drone.js has built/applied the
+// selected one. Before this gate the mission started while the GLB was
+// still loading, so the first gameplay frames showed the wireframe
+// placeholder ("poly duluan"). Real byte progress comes from streamed
+// fetches of both files; the loading overlay covers the whole screen
+// (so no menu button is reachable) until the gate passes, and the Enter
+// key is ignored until then too.
+const GLB_ASSETS = [
+  { id: 'quad', label: 'SKY HUNTER QUAD', url: 'assets/quad.glb', size: 3553212, total: 3553212, loaded: 0, done: false, failed: false },
+  { id: 'skyhunter', label: 'SKY HUNTER', url: 'assets/drone.glb', size: 4524296, total: 4524296, loaded: 0, done: false, failed: false },
+];
+let assetsReady = false;
+let assetsPhase = 'download'; // download | build
+
+function loadingProgress() {
+  const total = GLB_ASSETS.reduce((s, a) => s + a.total, 0);
+  const loaded = GLB_ASSETS.reduce((s, a) => s + Math.min(a.loaded, a.total), 0);
+  return total > 0 ? loaded / total : 0;
+}
+
+function fmtMB(bytes) {
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function updateLoadingUI() {
+  const fill = $('load-bar-fill');
+  const pct = $('load-pct');
+  const files = $('load-files');
+  const line = $('load-line');
+  if (!fill || !pct || !files || !line) return;
+  const p = assetsPhase === 'build' ? 1 : loadingProgress();
+  fill.style.width = `${Math.round(p * 100)}%`;
+  pct.textContent = assetsPhase === 'build' ? 'BUILDING…' : `${Math.round(p * 100)}%`;
+  files.textContent = GLB_ASSETS.map((a) => {
+    if (a.failed) return `${a.label} — FAILED`;
+    if (a.done) return `${a.label} ✓ ${fmtMB(a.total)}`;
+    return `${a.label} ${fmtMB(a.loaded)} / ${fmtMB(a.total)}`;
+  }).join('  ·  ');
+  line.textContent = assetsPhase === 'build'
+    ? 'BUILDING AIRCRAFT MODEL…'
+    : 'LOADING AIRCRAFT MODELS…';
+}
+
+async function preloadGLB(asset) {
+  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), 20000));
+  const work = (async () => {
+    const res = await fetch(asset.url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const total = Number(res.headers.get('Content-Length')) || asset.size;
+    asset.total = total;
+    const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+    if (!reader) {
+      await res.arrayBuffer();
+      asset.loaded = total;
+      return;
+    }
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      asset.loaded += value.length;
+      updateLoadingUI();
+    }
+  })();
+  try {
+    const result = await Promise.race([work, timeout]);
+    if (result === 'timeout') throw new Error('preload timed out');
+    asset.done = true;
+  } catch (err) {
+    // A failed preload must not deadlock the gate: drone.js raises its
+    // own error toast for a failed aircraft load; entry is then decided
+    // by the model state alone.
+    console.warn(`[sky-hunter] preload failed for ${asset.id}:`, err);
+    asset.failed = true;
+    asset.done = true;
+  }
+  updateLoadingUI();
+}
+
+async function waitForAssets() {
+  updateLoadingUI();
+  await Promise.all(GLB_ASSETS.map(preloadGLB));
+  // Both files downloaded (or failed); now wait for drone.js to build
+  // and apply the selected aircraft (parse + texture decode). A failed
+  // load unblocks too, and a 30 s cap keeps a hung load from
+  // deadlocking the gate.
+  assetsPhase = 'build';
+  updateLoadingUI();
+  const selectedId = settings.aircraft || 'quad';
+  const deadline = Date.now() + 30000;
+  while (window.__oshDroneModel !== selectedId) {
+    if (window.__oshDroneModel === 'glb-failed' || Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assetsReady = true;
+  updateLoadingUI();
+}
+
+// ---------------------------------------------------------------------------
 // Quality
 // ---------------------------------------------------------------------------
 function applyQuality() {
@@ -144,6 +243,10 @@ function startMission(index) {
   crashTimer = 0;
   refuelCooldown = 0;
   cameraMode = 'chase';
+  // Snap the chase camera onto the drone now: the first gameplay frame
+  // must show the real GLB aircraft, not an empty swing-in while the
+  // camera lerps over from the menu backdrop (same snap shot mode uses).
+  updateCamera(10);
   showScreen('playing');
 }
 
@@ -216,6 +319,7 @@ function refreshAircraftMenu() {
 
 function wireMenus() {
   $('btn-start').addEventListener('click', () => {
+    if (!assetsReady) return; // loading gate: no entry before the GLBs
     audio.init();
     audio.click();
     startMission(Math.min(missionIndex, progress.unlocked - 1));
@@ -255,6 +359,7 @@ function wireMenus() {
   refreshAircraftMenu();
   document.querySelectorAll('.mission-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (!assetsReady) return; // loading gate: no entry before the GLBs
       const idx = Number(btn.dataset.mission);
       if (idx >= progress.unlocked) return;
       audio.init();
@@ -373,10 +478,12 @@ function updateCamera(dt) {
     -Math.sin(flight.pitch),
     -Math.cos(flight.heading) * Math.cos(flight.pitch),
   );
-  // First-person view: the body is hidden but the spinning props stay
-  // visible (drone.setFpvMode), and the camera uses a wider FOV so the
-  // front rotors fall inside the frame at both edges. Chase keeps the
-  // standard 62° FOV and the full model on screen.
+  // First-person view: the whole GLB body stays visible (drone.setFpvMode),
+  // so the nose reads at the bottom of the frame and a bank reads through
+  // the airframe tilting, with the spinning props attached to it; the
+  // camera uses a wider FOV so the front rotors fall inside the frame at
+  // both edges. Chase keeps the standard 62° FOV and the full model on
+  // screen.
   drone.setFpvMode(cameraMode === 'fpv');
   if (cameraMode === 'fpv') {
     setFov(FPV_FOV);
@@ -461,7 +568,7 @@ function frame() {
     if (screen === 'playing') showScreen('paused');
     else if (screen === 'paused') showScreen('playing');
   }
-  if (input.wasPressed('Enter') && screen === 'menu') {
+  if (input.wasPressed('Enter') && screen === 'menu' && assetsReady) {
     audio.init();
     startMission(Math.min(missionIndex, progress.unlocked - 1));
   }
@@ -559,7 +666,10 @@ function frame() {
   for (const m of world.towerLights) m.color.setHex(blink ? 0xff2222 : 0x551111);
 
   renderer.render(scene, camera);
-  if (framesRendered === 2) {
+  // The ready signal (and the loading overlay) only go away once the
+  // asset gate has passed — test harnesses and screenshots must never
+  // capture the placeholder aircraft.
+  if (!window.__oshReady && assetsReady) {
     window.__oshReady = true;
     const loading = document.getElementById('loading');
     if (loading) loading.remove();
@@ -578,23 +688,28 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------------------
 wireMenus();
 refreshMissionMenu();
+// Start the asset gate now; entry (menu or screenshot mode) waits for it.
+const assetsGate = waitForAssets();
 if (shot) {
-  // Screenshot mode: straight into the staged moment, no menus.
-  audio.init();
-  startMission(shot.missionIndex);
-  // Fast-forward the drone toward the first ring so the frame is alive.
-  flight.pos.add(new THREE.Vector3(
-    Math.sin(flight.heading) * shot.headStart,
-    0,
-    -Math.cos(flight.heading) * shot.headStart,
-  ));
-  flight.throttle = shot.throttle;
-  flight.speed = shot.throttle * difficulty.maxSpeed * 0.7;
-  // Snap the chase camera onto the drone now: at low headless frame
-  // rates the camera lerp would otherwise still be swinging when the
-  // first frame is captured, leaving the aircraft at the edge.
-  updateCamera(10);
-  $('menu-main').classList.add('hidden');
+  // Screenshot mode: straight into the staged moment, no menus — but
+  // only once the real GLB is on screen, never the placeholder.
+  assetsGate.then(() => {
+    audio.init();
+    startMission(shot.missionIndex);
+    // Fast-forward the drone toward the first ring so the frame is alive.
+    flight.pos.add(new THREE.Vector3(
+      Math.sin(flight.heading) * shot.headStart,
+      0,
+      -Math.cos(flight.heading) * shot.headStart,
+    ));
+    flight.throttle = shot.throttle;
+    flight.speed = shot.throttle * difficulty.maxSpeed * 0.7;
+    // Snap the chase camera onto the drone now: at low headless frame
+    // rates the camera lerp would otherwise still be swinging when the
+    // first frame is captured, leaving the aircraft at the edge.
+    updateCamera(10);
+    $('menu-main').classList.add('hidden');
+  });
 } else {
   startAttract();
   showScreen('menu');
