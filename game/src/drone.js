@@ -100,16 +100,23 @@ export const AIRCRAFT = [
     spinDir: (name) => (/FL|RR/i.test(name) ? 1 : -1),
     gimbalNode: null,
     strobeMaterial: null,
-    // Eye over the body: 0.4 m behind centre, 1.35 m up — 0.88 m above
-    // the rotor plane (+0.47 m). At 1.0 m behind, the whole front disc
-    // fell inside the frame and the blades read face-on, like flying
-    // backward. Here the front hub sits ~53° off-axis, right at the
-    // ~53.7° horizontal half-FOV (75° vertical), so only the inner
-    // half of each front disc shows at the frame edge — a forward read
-    // — while the rear rotors stay out of view. (First try at -0.3 put
-    // the hub just outside the frame and the props read too faint in
-    // one of two test shots; -0.4 brings the inner half clearly in.)
-    fpvEye: { forward: -0.4, up: 1.35 },
+    // Eye over the body: 0.02 m behind centre, 1.35 m up — 0.88 m above
+    // the rotor plane (+0.47 m). At -0.4 the hub sat ~12% inside the
+    // frame edge and ~3/5 of each front disc showed (the user, on his
+    // ~2.15:1 phone where the horizontal half-FOV is ~59° vs 16:9's
+    // 53.7°, called it "3/4, masih kebanyakan"). Here the hub sits AT
+    // the frame edge on a ~2.15:1 screen (|x/z| = 2.30/1.38 = 1.67 vs
+    // tan(58.8°) = 1.65), so the frame slices each front disc through
+    // its centre: exactly ~1/2 of the diameter shows at each edge — a
+    // forward read — while the rear rotors stay behind the camera plane
+    // and out of view. Measured, level attitude: at 1600x720 the hubs
+    // sit at the edges (only blade tips at the corners); at 1280x720
+    // (16:9) the hubs sit just outside the frame and the inner ~1/3 of
+    // each disc shows (blade tips ~140 px) — no single eye value
+    // centres the hub on both aspects, and the user's phone is the
+    // reference. During banks the rotors swing inward and more shows;
+    // that is inherent to FPV, not the framing.
+    fpvEye: { forward: -0.02, up: 1.35 },
   },
   {
     id: 'skyhunter',
