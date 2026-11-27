@@ -27,6 +27,7 @@ export function createHUD() {
     ringDist: $('hud-ring-dist'),
     timer: $('hud-timer'),
     score: $('hud-score'),
+    cam: $('hud-cam'),
   };
   const compassCtx = els.compass.getContext('2d');
   const radarCtx = els.radar.getContext('2d');
@@ -133,6 +134,9 @@ export function createHUD() {
 
   let lastWarn = '';
   return {
+    setCameraMode(mode) {
+      els.cam.textContent = mode === 'orbit' ? 'CAM ORBIT' : mode === 'fpv' ? 'CAM FPV' : 'CAM CHASE';
+    },
     setMission(mission, difficultyLabel) {
       els.missionName.textContent = `MISSION 0${mission.id} — ${mission.name}`;
       els.objective.textContent = mission.briefing;

@@ -34,7 +34,7 @@ export const TIME_PRESETS = {
     hemi: { sky: 0xbfd9ee, ground: 0x4a5a3a, intensity: 0.5 },
     fog: { color: 0xcfdde8, near: 1100, far: 4500 },
     sky: { top: 0x2a6cb4, mid: 0x7fb2dd, low: 0xd8e6ef },
-    exposure: 1.0,
+    exposure: 1.1,
     cloud: 0xffffff,
   },
   golden: {
@@ -43,7 +43,7 @@ export const TIME_PRESETS = {
     hemi: { sky: 0xffd9a0, ground: 0x5a4a3a, intensity: 0.45 },
     fog: { color: 0xe8c9a0, near: 900, far: 3800 },
     sky: { top: 0x3a5a8c, mid: 0xe8a860, low: 0xffd9a0 },
-    exposure: 1.0,
+    exposure: 1.1,
     cloud: 0xffe0b8,
   },
   overcast: {
@@ -52,7 +52,7 @@ export const TIME_PRESETS = {
     hemi: { sky: 0xcfd8e0, ground: 0x555a52, intensity: 0.85 },
     fog: { color: 0xc8ccd0, near: 700, far: 3200 },
     sky: { top: 0x6a7a8c, mid: 0x9aa8b4, low: 0xc8ccd0 },
-    exposure: 0.95,
+    exposure: 1.05,
     cloud: 0xd8dde2,
   },
 };

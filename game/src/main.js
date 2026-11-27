@@ -66,7 +66,8 @@ let flight = null;
 let runner = null;
 let rings = null;
 let missionIndex = 0;
-let cameraMode = 'chase'; // chase | fpv
+let cameraMode = 'chase'; // chase | fpv | orbit
+window.__oshCameraMode = 'chase';
 let time = 0;
 let trauma = 0;
 let toastTimer = null;
@@ -242,7 +243,7 @@ function startMission(index) {
   trauma = 0;
   crashTimer = 0;
   refuelCooldown = 0;
-  cameraMode = 'chase';
+  setCameraMode('chase');
   // Snap the chase camera onto the drone now: the first gameplay frame
   // must show the real GLB aircraft, not an empty swing-in while the
   // camera lerps over from the menu backdrop (same snap shot mode uses).
@@ -455,7 +456,7 @@ function startAttract() {
   runner = createMissionRunner(world, difficulty);
   runner.start(0, rings);
   flight.lookTarget = rings.next() ? rings.next().center : null;
-  cameraMode = 'chase';
+  setCameraMode('chase');
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +466,45 @@ const camPos = new THREE.Vector3(0, 120, 200);
 const camLook = new THREE.Vector3(0, 100, 0);
 const CHASE_FOV = 62;
 const FPV_FOV = 75;
+// Orbit camera: the player inspects the drone from any angle while it
+// keeps flying. Azimuth is a world-frame angle (0 = camera south of the
+// drone, looking north); elevation -10°..80°; distance 6..60 m — the
+// 6 m floor keeps the camera outside the rotor discs of both aircraft.
+const orbit = { azimuth: 0, elevation: 0.25, distance: 18 };
+const ORBIT_MIN_DIST = 6;
+const ORBIT_MAX_DIST = 60;
+window.__oshOrbit = orbit;
+
+function setCameraMode(mode) {
+  cameraMode = mode;
+  window.__oshCameraMode = mode;
+  // The input layer needs to know: in orbit mode the canvas click must
+  // not take a pointer lock (the drag needs a free cursor).
+  input.setOrbitMode(mode === 'orbit');
+  hud.setCameraMode(mode);
+}
+
+function enterOrbit() {
+  if (cameraMode === 'fpv') {
+    // The FPV eye sits on the drone, so there is no useful chase offset
+    // to derive: start behind the aircraft at a standard inspection
+    // range instead (azimuth -heading = behind, same as the chase cam).
+    orbit.azimuth = -flight.heading;
+    orbit.elevation = 0.25;
+    orbit.distance = 18;
+  } else {
+    // Start where the chase camera already is, so there is no jump.
+    const off = camPos.clone().sub(flight.pos);
+    const len = Math.max(off.length(), 1);
+    orbit.distance = clamp(len, ORBIT_MIN_DIST, ORBIT_MAX_DIST);
+    orbit.azimuth = Math.atan2(off.x, off.z);
+    orbit.elevation = clamp(Math.asin(clamp(off.y / len, -1, 1)), -0.18, 1.4);
+  }
+  setCameraMode('orbit');
+  // Snap the smoothed camera onto the orbit position at once.
+  updateCamera(10);
+  showToast('CAMERA: ORBIT — DRAG TO LOOK, WHEEL TO ZOOM');
+}
 function setFov(f) {
   if (camera.fov !== f) {
     camera.fov = f;
@@ -495,6 +535,35 @@ function updateCamera(dt) {
     eye.y += fpvEye.up;
     camera.position.copy(eye);
     camera.lookAt(flight.pos.clone().addScaledVector(fwd, 40));
+    return;
+  }
+  if (cameraMode === 'orbit') {
+    // Orbit: the camera circles the drone on a sphere centred on it and
+    // always looks at it. Drag changes the angles, the wheel the radius;
+    // the drone itself keeps flying its course — only the camera moves.
+    // The full GLB stays visible (setFpvMode(false) above), so the
+    // aircraft reads from every angle, and the chase FOV applies.
+    setFov(CHASE_FOV);
+    const o = input.consumeOrbit();
+    orbit.azimuth -= o.dx * 0.005;
+    orbit.elevation = clamp(orbit.elevation - o.dy * 0.005, -0.18, 1.4);
+    orbit.distance = clamp(orbit.distance * Math.exp(o.wheel * 0.001), ORBIT_MIN_DIST, ORBIT_MAX_DIST);
+    const ce = Math.cos(orbit.elevation);
+    const target = flight.pos.clone().add(new THREE.Vector3(
+      Math.sin(orbit.azimuth) * ce * orbit.distance,
+      Math.sin(orbit.elevation) * orbit.distance,
+      Math.cos(orbit.azimuth) * ce * orbit.distance,
+    ));
+    // Keep the orbit camera out of the terrain, same floor as chase.
+    const orbitGround = world.heightAt(target.x, target.z);
+    if (target.y < orbitGround + 2.5) target.y = orbitGround + 2.5;
+    const ok = 1 - Math.exp(-12 * dt);
+    camPos.lerp(target, ok);
+    const orbitLook = flight.pos.clone();
+    orbitLook.y += 1.0;
+    camLook.lerp(orbitLook, 1 - Math.exp(-12 * dt));
+    camera.position.copy(camPos);
+    camera.lookAt(camLook);
     return;
   }
   setFov(CHASE_FOV);
@@ -557,8 +626,24 @@ function frame() {
     showToast(`AIRCRAFT: ${aircraftById(next).name}`);
   }
   if (!shot && input.wasPressed('KeyC') && screen === 'playing') {
-    cameraMode = cameraMode === 'chase' ? 'fpv' : 'chase';
-    showToast(cameraMode === 'fpv' ? 'CAMERA: FIRST PERSON' : 'CAMERA: CHASE');
+    // From orbit, C goes back to chase; otherwise chase <-> FPV as before.
+    if (cameraMode === 'orbit') {
+      setCameraMode('chase');
+      showToast('CAMERA: CHASE');
+    } else {
+      setCameraMode(cameraMode === 'chase' ? 'fpv' : 'chase');
+      showToast(cameraMode === 'fpv' ? 'CAMERA: FIRST PERSON' : 'CAMERA: CHASE');
+    }
+  }
+  // Orbit camera: O toggles orbit <-> chase (from FPV it enters orbit
+  // too). Shot mode ignores O entirely — staged shots stay chase/FPV.
+  if (!shot && input.wasPressed('KeyO') && screen === 'playing') {
+    if (cameraMode === 'orbit') {
+      setCameraMode('chase');
+      showToast('CAMERA: CHASE');
+    } else {
+      enterOrbit();
+    }
   }
   if (!shot && input.wasPressed('KeyR') && screen === 'playing') {
     startMission(missionIndex);
